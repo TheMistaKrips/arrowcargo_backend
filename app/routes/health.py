@@ -7,6 +7,7 @@ import logging
 from datetime import datetime
 import psutil
 import os
+import sys
 
 from ..database import get_db
 from .. import crud
@@ -44,11 +45,13 @@ async def detailed_health_check(db: Session = Depends(get_db)):
         checks["database"]["status"] = "healthy"
         checks["database"]["message"] = "База данных доступна"
         
-        # Проверка количества таблиц
-        table_count = db.execute(
-            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public'"
-        ).scalar()
-        checks["database"]["tables"] = table_count
+        # Проверка количества таблиц (для SQLite)
+        try:
+            result = db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+            table_count = len(result)
+            checks["database"]["tables"] = table_count
+        except:
+            checks["database"]["tables"] = "unknown"
         
     except Exception as e:
         checks["database"]["status"] = "unhealthy"
@@ -95,10 +98,9 @@ async def detailed_health_check(db: Session = Depends(get_db)):
         "timestamp": datetime.utcnow().isoformat(),
         "checks": checks,
         "system_info": {
-            "python_version": os.sys.version,
-            "platform": os.sys.platform,
-            "uptime_seconds": int(psutil.boot_time()),
-            "cpu_count": psutil.cpu_count()
+            "python_version": sys.version,
+            "platform": sys.platform,
+            "cpu_count": psutil.cpu_count() if hasattr(psutil, 'cpu_count') else "unknown"
         }
     }
 
@@ -128,17 +130,11 @@ async def database_health_check(db: Session = Depends(get_db)):
                 stats["tables"][table] = "error"
         
         # Статистика пользователей
-        user_stats = crud.get_system_stats(db)
-        stats["statistics"]["users"] = user_stats
-        
-        # Активные соединения (для PostgreSQL)
         try:
-            connections = db.execute(
-                "SELECT count(*) FROM pg_stat_activity WHERE state = 'active'"
-            ).scalar()
-            stats["statistics"]["active_connections"] = connections
+            user_stats = crud.get_system_stats(db)
+            stats["statistics"]["users"] = user_stats
         except:
-            pass
+            stats["statistics"]["users"] = "error"
         
         return {
             "status": "healthy",
@@ -180,57 +176,63 @@ async def system_metrics():
     """
     Метрики системы для мониторинга
     """
-    # Системные метрики
-    cpu_percent = psutil.cpu_percent(interval=0.1)
-    memory = psutil.virtual_memory()
-    disk = psutil.disk_usage('/')
-    
-    # Сетевые метрики
-    net_io = psutil.net_io_counters()
-    
-    # Метрики процесса
-    process = psutil.Process()
-    process_memory = process.memory_info()
-    
-    metrics = {
-        "timestamp": datetime.utcnow().isoformat(),
-        "system": {
-            "cpu": {
-                "percent": cpu_percent,
-                "cores": psutil.cpu_count(),
-                "cores_logical": psutil.cpu_count(logical=True)
+    try:
+        # Системные метрики
+        cpu_percent = psutil.cpu_percent(interval=0.1)
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        
+        # Сетевые метрики
+        net_io = psutil.net_io_counters()
+        
+        # Метрики процесса
+        process = psutil.Process()
+        process_memory = process.memory_info()
+        
+        metrics = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "system": {
+                "cpu": {
+                    "percent": cpu_percent,
+                    "cores": psutil.cpu_count(),
+                    "cores_logical": psutil.cpu_count(logical=True)
+                },
+                "memory": {
+                    "total_bytes": memory.total,
+                    "available_bytes": memory.available,
+                    "used_bytes": memory.used,
+                    "percent": memory.percent
+                },
+                "disk": {
+                    "total_bytes": disk.total,
+                    "free_bytes": disk.free,
+                    "used_bytes": disk.used,
+                    "percent": disk.percent
+                },
+                "network": {
+                    "bytes_sent": net_io.bytes_sent,
+                    "bytes_recv": net_io.bytes_recv,
+                    "packets_sent": net_io.packets_sent,
+                    "packets_recv": net_io.packets_recv
+                }
             },
-            "memory": {
-                "total_bytes": memory.total,
-                "available_bytes": memory.available,
-                "used_bytes": memory.used,
-                "percent": memory.percent
-            },
-            "disk": {
-                "total_bytes": disk.total,
-                "free_bytes": disk.free,
-                "used_bytes": disk.used,
-                "percent": disk.percent
-            },
-            "network": {
-                "bytes_sent": net_io.bytes_sent,
-                "bytes_recv": net_io.bytes_recv,
-                "packets_sent": net_io.packets_sent,
-                "packets_recv": net_io.packets_recv
+            "process": {
+                "pid": process.pid,
+                "name": process.name(),
+                "memory_rss_bytes": process_memory.rss,
+                "memory_vms_bytes": process_memory.vms,
+                "cpu_percent": process.cpu_percent(),
+                "threads": process.num_threads()
             }
-        },
-        "process": {
-            "pid": process.pid,
-            "name": process.name(),
-            "memory_rss_bytes": process_memory.rss,
-            "memory_vms_bytes": process_memory.vms,
-            "cpu_percent": process.cpu_percent(),
-            "threads": process.num_threads(),
-            "connections": len(process.connections())
         }
-    }
-    
-    return metrics
+        
+        return metrics
+    except Exception as e:
+        return {
+            "timestamp": datetime.utcnow().isoformat(),
+            "error": str(e),
+            "status": "partial"
+        }
 
 @router.get("/version")
 async def version_info():

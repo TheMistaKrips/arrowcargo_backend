@@ -1,6 +1,7 @@
 """
 Роутер для отслеживания местоположения (WebSocket)
 """
+from typing import Annotated
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, Query, HTTPException, status
 from sqlalchemy.orm import Session
 import json
@@ -338,10 +339,10 @@ async def websocket_track_subscribe_endpoint(
 @router.get("/track/driver/{driver_id}/locations")
 async def get_driver_locations(
     driver_id: int,
+    current_user: Annotated[schemas.UserResponse, Depends(get_current_user)],
+    db: Session = Depends(get_db),
     hours: int = Query(24, ge=1, le=168, description="Количество часов истории"),
-    limit: int = Query(100, ge=1, le=1000, description="Лимит записей"),
-    current_user = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    limit: int = Query(100, ge=1, le=1000, description="Лимит записей")
 ):
     """
     Получение истории местоположения водителя (HTTP endpoint)
@@ -389,7 +390,7 @@ async def get_driver_locations(
 @router.get("/track/order/{order_id}/route")
 async def get_order_route(
     order_id: int,
-    current_user = Depends(get_current_user),
+    current_user: Annotated[schemas.UserResponse, Depends(get_current_user)],
     db: Session = Depends(get_db)
 ):
     """

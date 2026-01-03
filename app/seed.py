@@ -19,43 +19,65 @@ def seed_database(db: Session):
     
     # Создаем администратора
     print("👑 Создание администратора...")
-    admin_user = models.User(
-        email="admin@cargopro.com",
-        phone="+79991112233",
-        full_name="Администратор CargoPro",
-        role=models.UserRole.ADMIN,
-        is_active=True,
-        is_verified=True,
-        hashed_password=get_password_hash("Admin123!"),
-        balance=0.0
-    )
-    db.add(admin_user)
-    db.commit()
-    db.refresh(admin_user)
-    print(f"✅ Администратор создан: {admin_user.email}")
+    try:
+        admin_user = models.User(
+            email="admin@cargopro.com",
+            phone="+79991112233",
+            full_name="Администратор CargoPro",
+            role=models.UserRole.ADMIN,
+            is_active=True,
+            is_verified=True,
+            hashed_password=get_password_hash("Admin123!"),
+            balance=0.0
+        )
+        db.add(admin_user)
+        db.commit()
+        db.refresh(admin_user)
+        print(f"✅ Администратор создан: {admin_user.email}")
+    except Exception as e:
+        print(f"❌ Ошибка создания администратора: {e}")
+        # Пробуем с более коротким паролем
+        try:
+            admin_user = models.User(
+                email="admin@cargopro.com",
+                phone="+79991112233",
+                full_name="Администратор CargoPro",
+                role=models.UserRole.ADMIN,
+                is_active=True,
+                is_verified=True,
+                hashed_password=get_password_hash("Admin123"),
+                balance=0.0
+            )
+            db.add(admin_user)
+            db.commit()
+            db.refresh(admin_user)
+            print(f"✅ Администратор создан (с коротким паролем): {admin_user.email}")
+        except Exception as e2:
+            print(f"❌ Критическая ошибка: {e2}")
+            return
     
     # Создаем тестовых клиентов
     print("👥 Создание тестовых клиентов...")
     clients_data = [
-        {
-            "email": "client1@example.com",
-            "phone": "+79992223344",
-            "full_name": "Иван Петров",
-            "password": "Client123!"
-        },
-        {
-            "email": "client2@example.com",
-            "phone": "+79993334455",
-            "full_name": "Мария Сидорова",
-            "password": "Client123!"
-        },
-        {
-            "email": "company@example.com",
-            "phone": "+74951234567",
-            "full_name": "ООО 'Грузовик'",
-            "password": "Company123!"
-        }
-    ]
+    {
+        "email": "client1@example.com",
+        "phone": "+79992223344",
+        "full_name": "Иван Петров",
+        "password": "Client123"  # Убрали ! чтобы было короче
+    },
+    {
+        "email": "client2@example.com",
+        "phone": "+79993334455",
+        "full_name": "Мария Сидорова",
+        "password": "Client123"
+    },
+    {
+        "email": "company@example.com",
+        "phone": "+74951234567",
+        "full_name": "ООО 'Грузовик'",
+        "password": "Company123"
+    }
+]
     
     clients = []
     for client_data in clients_data:
@@ -84,7 +106,7 @@ def seed_database(db: Session):
             "email": "driver1@example.com",
             "phone": "+79994445566",
             "full_name": "Алексей Водилов",
-            "password": "Driver123!",
+            "password": "Driver123",
             "vehicle_type": "Грузовик",
             "vehicle_model": "Mercedes Actros",
             "vehicle_number": "А123ВС777",
@@ -100,7 +122,7 @@ def seed_database(db: Session):
             "email": "driver2@example.com",
             "phone": "+79995556677",
             "full_name": "Дмитрий Шоферов",
-            "password": "Driver123!",
+            "password": "Driver123",
             "vehicle_type": "Фургон",
             "vehicle_model": "Ford Transit",
             "vehicle_number": "В456ОР777",
@@ -116,7 +138,7 @@ def seed_database(db: Session):
             "email": "driver3@example.com",
             "phone": "+79996667788",
             "full_name": "Сергей Грузовиков",
-            "password": "Driver123!",
+            "password": "Driver123",
             "vehicle_type": "Рефрижератор",
             "vehicle_model": "Volvo FH",
             "vehicle_number": "С789ТУ777",
@@ -132,7 +154,7 @@ def seed_database(db: Session):
             "email": "driver4@example.com",
             "phone": "+79997778899",
             "full_name": "Павел Перевозкин",
-            "password": "Driver123!",
+            "password": "Driver123",
             "vehicle_type": "Тентованный",
             "vehicle_model": "Scania R450",
             "vehicle_number": "Е012КХ777",

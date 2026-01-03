@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 import json
 import logging
 from datetime import datetime
-
+from typing import Annotated
 from .. import crud, schemas, models
 from ..auth import verify_token, get_current_user
 from ..database import get_db
@@ -182,10 +182,10 @@ async def websocket_chat_endpoint(
 @router.get("/chat/{order_id}/messages", response_model=list[schemas.MessageResponse])
 async def get_chat_messages(
     order_id: int,
+    current_user: Annotated[schemas.UserResponse, Depends(get_current_user)],
+    db: Session = Depends(get_db),
     skip: int = 0,
-    limit: int = 100,
-    current_user = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    limit: int = 100
 ):
     """
     Получение истории сообщений чата (HTTP endpoint)
@@ -222,7 +222,7 @@ async def get_chat_messages(
 @router.post("/chat/{order_id}/mark-read")
 async def mark_chat_as_read(
     order_id: int,
-    current_user = Depends(get_current_user),
+    current_user: Annotated[schemas.UserResponse, Depends(get_current_user)],
     db: Session = Depends(get_db)
 ):
     """
@@ -255,7 +255,7 @@ async def mark_chat_as_read(
 
 @router.get("/chat/unread-count")
 async def get_unread_chat_count(
-    current_user = Depends(get_current_user),
+    current_user: Annotated[schemas.UserResponse, Depends(get_current_user)],
     db: Session = Depends(get_db)
 ):
     """

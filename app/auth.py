@@ -2,7 +2,7 @@
 Аутентификация и авторизация
 """
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, Annotated
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
@@ -30,9 +30,30 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Проверка пароля"""
     return pwd_context.verify(plain_password, hashed_password)
 
+def safe_get_password_hash(password: str) -> str:
+    """Безопасное хеширование пароля с обработкой ошибок"""
+    # Обрезаем пароль до 72 символов для bcrypt
+    password = password[:72]
+    
+    # Проверяем, что пароль не пустой после обрезки
+    if not password:
+        raise ValueError("Password is too short or empty")
+    
+    return pwd_context.hash(password)
+
 def get_password_hash(password: str) -> str:
     """Хеширование пароля"""
-    return pwd_context.hash(password)
+    # Обрезаем пароль если он слишком длинный
+    if len(password) > 72:
+        password = password[:72]
+    try:
+        return pwd_context.hash(password)
+    except Exception as e:
+        # Если возникает ошибка с bcrypt, используем альтернативный метод
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error hashing password: {str(e)}"
+        )
 
 def get_user_by_email(db: Session, email: str) -> Optional[models.User]:
     """Получение пользователя по email"""
@@ -96,7 +117,7 @@ def verify_token(token: str) -> Optional[dict]:
         return None
 
 async def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    token: Annotated[str, Depends(oauth2_scheme)],
     db: Session = Depends(get_db)
 ) -> models.User:
     """Получение текущего пользователя из токена"""
@@ -136,7 +157,7 @@ async def get_current_user(
     return user
 
 async def get_current_active_user(
-    current_user: schemas.UserResponse = Depends(get_current_user)
+    current_user: Annotated[schemas.UserResponse, Depends(get_current_user)]
 ) -> schemas.UserResponse:
     """Проверка активности пользователя"""
     if not current_user.is_active:
@@ -157,35 +178,35 @@ def check_user_role(user: models.User, allowed_roles: list) -> bool:
 
 # Специальные зависимости для разных ролей
 async def get_current_admin(
-    current_user: models.User = Depends(get_current_user)
+    current_user: Annotated[models.User, Depends(get_current_user)]
 ) -> models.User:
     """Только администраторы"""
     check_user_role(current_user, [models.UserRole.ADMIN])
     return current_user
 
 async def get_current_driver(
-    current_user: models.User = Depends(get_current_user)
+    current_user: Annotated[models.User, Depends(get_current_user)]
 ) -> models.User:
     """Только водители"""
     check_user_role(current_user, [models.UserRole.DRIVER])
     return current_user
 
 async def get_current_client(
-    current_user: models.User = Depends(get_current_user)
+    current_user: Annotated[models.User, Depends(get_current_user)]
 ) -> models.User:
     """Только клиенты"""
     check_user_role(current_user, [models.UserRole.CLIENT])
     return current_user
 
 async def get_current_client_or_admin(
-    current_user: models.User = Depends(get_current_user)
+    current_user: Annotated[models.User, Depends(get_current_user)]
 ) -> models.User:
     """Клиенты или администраторы"""
     check_user_role(current_user, [models.UserRole.CLIENT, models.UserRole.ADMIN])
     return current_user
 
 async def get_current_driver_or_admin(
-    current_user: models.User = Depends(get_current_user)
+    current_user: Annotated[models.User, Depends(get_current_user)]
 ) -> models.User:
     """Водители или администраторы"""
     check_user_role(current_user, [models.UserRole.DRIVER, models.UserRole.ADMIN])

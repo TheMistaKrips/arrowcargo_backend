@@ -2,6 +2,7 @@
 Роутер для аутентификации
 """
 from datetime import timedelta
+from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -47,6 +48,10 @@ async def register(
             detail="Номер телефона уже зарегистрирован"
         )
     
+    # Обрезаем пароль если слишком длинный
+    if len(user.password) > 72:
+        user.password = user.password[:72]
+    
     try:
         # Создание пользователя
         created_user = crud.create_user(db=db, user=user)
@@ -72,7 +77,7 @@ async def register(
 
 @router.post("/login", response_model=schemas.Token)
 async def login(
-    form_data: OAuth2PasswordRequestForm = Depends(),
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     db: Session = Depends(get_db)
 ):
     """
@@ -113,12 +118,19 @@ async def login(
 
 @router.post("/refresh", response_model=schemas.Token)
 async def refresh_token(
-    refresh_token: str,
+    data: dict,
     db: Session = Depends(get_db)
 ):
     """
     Обновление access токена с помощью refresh токена
     """
+    refresh_token = data.get("refresh_token")
+    if not refresh_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Refresh token is required"
+        )
+    
     payload = verify_token(refresh_token)
     if not payload:
         raise HTTPException(
@@ -168,7 +180,7 @@ async def refresh_token(
 
 @router.get("/me", response_model=schemas.UserResponse)
 async def get_current_user_info(
-    current_user: schemas.UserResponse = Depends(get_current_user)
+    current_user: Annotated[schemas.UserResponse, Depends(get_current_user)]
 ):
     """
     Получение информации о текущем пользователе
@@ -178,7 +190,7 @@ async def get_current_user_info(
 @router.post("/change-password")
 async def change_password(
     password_data: schemas.UserUpdate,
-    current_user: schemas.UserResponse = Depends(get_current_user),
+    current_user: Annotated[schemas.UserResponse, Depends(get_current_user)],
     db: Session = Depends(get_db)
 ):
     """
@@ -201,13 +213,20 @@ async def change_password(
 
 @router.post("/reset-password-request")
 async def reset_password_request(
-    email: str,
+    data: dict,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
     Запрос на сброс пароля
     """
+    email = data.get("email")
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email is required"
+        )
+    
     user = crud.get_user_by_email(db, email)
     if not user:
         # Для безопасности не раскрываем, существует ли пользователь
@@ -228,13 +247,21 @@ async def reset_password_request(
 
 @router.post("/reset-password")
 async def reset_password(
-    token: str,
-    new_password: str,
+    data: dict,
     db: Session = Depends(get_db)
 ):
     """
     Сброс пароля с использованием токена
     """
+    token = data.get("token")
+    new_password = data.get("new_password")
+    
+    if not token or not new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token and new password are required"
+        )
+    
     payload = verify_token(token)
     if not payload or payload.get("purpose") != "password_reset":
         raise HTTPException(

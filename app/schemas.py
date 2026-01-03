@@ -50,12 +50,14 @@ class UserBase(BaseModel):
     role: UserRole = UserRole.CLIENT
 
 class UserCreate(UserBase):
-    password: str = Field(..., min_length=8)
+    password: str = Field(..., min_length=8, max_length=72)
     
     @field_validator('password')
     def validate_password(cls, v):
         if len(v) < 8:
             raise ValueError('Password must be at least 8 characters long')
+        if len(v) > 72:
+            raise ValueError('Password cannot be longer than 72 characters')
         if not any(c.isupper() for c in v):
             raise ValueError('Password must contain at least one uppercase letter')
         if not any(c.islower() for c in v):
