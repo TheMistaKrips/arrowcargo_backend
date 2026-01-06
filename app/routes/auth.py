@@ -83,15 +83,35 @@ async def login(
     """
     Вход в систему
     """
+    # Добавляем отладку
+    print(f"🔐 LOGIN ATTEMPT:")
+    print(f"  Username (email): {form_data.username}")
+    print(f"  Password length: {len(form_data.password) if form_data.password else 0}")
+    
     user = authenticate_user(db, form_data.username, form_data.password)
+    
     if not user:
+        print(f"❌ AUTH FAILED: User not found or password incorrect")
+        print(f"   Searching for email: {form_data.username}")
+        
+        # Проверяем существование пользователя
+        existing_user = crud.get_user_by_email(db, form_data.username)
+        if existing_user:
+            print(f"   User exists: {existing_user.email}, active: {existing_user.is_active}")
+            print(f"   Hashed password: {existing_user.hashed_password[:30]}...")
+        else:
+            print(f"   No user with email: {form_data.username}")
+        
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Неверный email или пароль",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
+    print(f"✅ USER FOUND: {user.email}, Role: {user.role}, Active: {user.is_active}")
+    
     if not user.is_active:
+        print(f"❌ USER INACTIVE: {user.email} is not active")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Пользователь неактивен"
@@ -109,12 +129,18 @@ async def login(
     
     logger.info(f"User logged in: {user.email}, role: {user.role}")
     
-    return schemas.Token(
-        access_token=access_token,
-        refresh_token=refresh_token,
-        token_type="bearer",
-        user=schemas.UserResponse.model_validate(user)
-    )
+    response_data = {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+        "user": schemas.UserResponse.model_validate(user)
+    }
+    
+    print(f"✅ LOGIN SUCCESSFUL: {user.email}")
+    print(f"   Token: {access_token[:50]}...")
+    print(f"   Response structure: {response_data}")
+    
+    return schemas.Token(**response_data)
 
 @router.post("/refresh", response_model=schemas.Token)
 async def refresh_token(

@@ -11,6 +11,7 @@ from .track import router as track_router
 from .admin import router as admin_router
 from .health import router as health_router
 from .integration import router as integration_router
+from .admin_dashboard import router as admin_dashboard_router  # <-- ДОБАВИЛИ
 
 __all__ = [
     "auth_router",
@@ -22,5 +23,6 @@ __all__ = [
     "track_router",
     "admin_router",
     "health_router",
-    "integration_router"
+    "integration_router",
+    "admin_dashboard_router"  # <-- ДОБАВИЛИ
 ]

@@ -1,12 +1,14 @@
 """
 Основной файл приложения FastAPI
 """
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse  # <-- ДОБАВЬТЕ ЭТО
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 import logging
 import os
+from starlette.exceptions import HTTPException as StarletteHTTPException  # <-- ДОБАВЬТЕ
 
 from .database import engine, Base
 from .config import settings
@@ -20,7 +22,8 @@ from .routes import (
     track_router,
     admin_router,
     health_router,
-    integration_router
+    integration_router,
+    admin_dashboard_router
 )
 
 # Настройка логирования
@@ -100,6 +103,7 @@ app.include_router(track_router)
 app.include_router(admin_router)
 app.include_router(health_router)
 app.include_router(integration_router)
+app.include_router(admin_dashboard_router)
 
 # Основные эндпоинты
 @app.get("/")
@@ -158,17 +162,20 @@ async def log_requests(request, call_next):
     logger.info(f"Response: {response.status_code}")
     return response
 
-# Обработка ошибок
+# Обработка ошибок - ИСПРАВЛЕННЫЕ ВЕРСИИ
 @app.exception_handler(404)
 async def not_found_exception_handler(request, exc):
     """
     Обработка 404 ошибок
     """
-    return {
-        "error": "Not Found",
-        "message": "Запрошенный ресурс не найден",
-        "path": request.url.path
-    }
+    return JSONResponse(
+        status_code=404,
+        content={
+            "error": "Not Found",
+            "message": "Запрошенный ресурс не найден",
+            "path": request.url.path
+        }
+    )
 
 @app.exception_handler(500)
 async def internal_server_error_handler(request, exc):
@@ -176,11 +183,22 @@ async def internal_server_error_handler(request, exc):
     Обработка 500 ошибок
     """
     logger.error(f"Internal Server Error: {exc}")
-    return {
-        "error": "Internal Server Error",
-        "message": "Внутренняя ошибка сервера",
-        "request_id": request.headers.get("X-Request-ID", "unknown")
-    }
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal Server Error",
+            "message": "Внутренняя ошибка сервера",
+            "request_id": request.headers.get("X-Request-ID", "unknown")
+        }
+    )
+
+# Добавьте обработчик для всех HTTP исключений
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request, exc):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail}
+    )
 
 # Запуск приложения (для разработки)
 if __name__ == "__main__":

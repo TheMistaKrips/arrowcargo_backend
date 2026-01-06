@@ -1,59 +1,40 @@
 """
-Аутентификация и авторизация
+Аутентификация и авторизация - РАБОЧАЯ ВЕРСИЯ
 """
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Annotated
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 import secrets
+import hashlib
 
 from . import models, schemas
 from .database import get_db
 from .config import settings
 
-# Контекст для хеширования паролей
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 # Схема OAuth2 для получения токена
 oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl="/api/auth/login",
-    auto_error=False  # Не вызывать ошибку автоматически
+    auto_error=False
 )
 
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 REFRESH_TOKEN_EXPIRE_DAYS = settings.REFRESH_TOKEN_EXPIRE_DAYS
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Проверка пароля"""
-    return pwd_context.verify(plain_password, hashed_password)
-
-def safe_get_password_hash(password: str) -> str:
-    """Безопасное хеширование пароля с обработкой ошибок"""
-    # Обрезаем пароль до 72 символов для bcrypt
-    password = password[:72]
-    
-    # Проверяем, что пароль не пустой после обрезки
-    if not password:
-        raise ValueError("Password is too short or empty")
-    
-    return pwd_context.hash(password)
+    """Проверка пароля - SHA256"""
+    try:
+        test_hash = hashlib.sha256(plain_password.encode()).hexdigest()
+        return test_hash == hashed_password
+    except Exception as e:
+        print(f"Password verification error: {e}")
+        return False
 
 def get_password_hash(password: str) -> str:
-    """Хеширование пароля"""
-    # Обрезаем пароль если он слишком длинный
-    if len(password) > 72:
-        password = password[:72]
-    try:
-        return pwd_context.hash(password)
-    except Exception as e:
-        # Если возникает ошибка с bcrypt, используем альтернативный метод
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Error hashing password: {str(e)}"
-        )
+    """Хеширование пароля - SHA256"""
+    return hashlib.sha256(password.encode()).hexdigest()
 
 def get_user_by_email(db: Session, email: str) -> Optional[models.User]:
     """Получение пользователя по email"""
@@ -65,11 +46,17 @@ def get_user_by_id(db: Session, user_id: int) -> Optional[models.User]:
 
 def authenticate_user(db: Session, email: str, password: str) -> Optional[models.User]:
     """Аутентификация пользователя"""
+    print(f"🔐 Authenticating user: {email}")
     user = get_user_by_email(db, email)
     if not user:
+        print(f"❌ User not found: {email}")
         return None
+    
     if not verify_password(password, user.hashed_password):
+        print(f"❌ Wrong password for: {email}")
         return None
+    
+    print(f"✅ User authenticated: {email}, role: {user.role}")
     return user
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
@@ -84,11 +71,10 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     to_encode.update({
         "exp": expire,
         "type": "access",
-        "jti": secrets.token_urlsafe(32)  # Уникальный идентификатор токена
+        "jti": secrets.token_urlsafe(32)
     })
     
-    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
-    return encoded_jwt
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """Создание refresh токена"""
@@ -105,14 +91,12 @@ def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None) 
         "jti": secrets.token_urlsafe(32)
     })
     
-    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
-    return encoded_jwt
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 def verify_token(token: str) -> Optional[dict]:
     """Проверка токена"""
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        return payload
+        return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
     except JWTError:
         return None
 
