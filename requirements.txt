@@ -18,3 +18,9 @@ pytest
 pytest-asyncio
 httpx
 faker
+# Добавить новые зависимости:
+pdfkit
+wkhtmltopdf
+python-magic-bin; sys_platform == 'win32'
+python-magic; sys_platform != 'win32'  # Для работы с изображениями
+reportlab  # Альтернатива для генерации PDF

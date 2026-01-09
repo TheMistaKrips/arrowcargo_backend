@@ -1,6 +1,7 @@
 """
 Модели базы данных
 """
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Enum, Text, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -16,6 +17,145 @@ class VerificationStatus(str, enum.Enum):
     PENDING = "pending"
     VERIFIED = "verified"
     REJECTED = "rejected"
+
+class DocumentStatus(str, enum.Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+class Company(Base):
+    """Компания (для юр. лиц)"""
+    __tablename__ = "companies"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String, nullable=False)
+    inn = Column(String, unique=True, nullable=False)
+    kpp = Column(String, nullable=True)
+    ogrn = Column(String, nullable=False)
+    legal_address = Column(String, nullable=False)
+    actual_address = Column(String, nullable=True)
+    bank_name = Column(String, nullable=False)
+    bank_account = Column(String, nullable=False)
+    corr_account = Column(String, nullable=True)
+    bic = Column(String, nullable=False)
+    director_name = Column(String, nullable=False)
+    director_position = Column(String, nullable=False)
+    documents = Column(JSON, nullable=True)  # {"egrul": "path", "order": "path"}
+    verification_status = Column(SQLEnum(VerificationStatus), default=VerificationStatus.PENDING)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    user = relationship("User", backref="company")
+
+class Contract(Base):
+    """Договор/контракт"""
+    __tablename__ = "contracts"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)
+    template_id = Column(Integer, ForeignKey("contract_templates.id"), nullable=True)
+    pdf_path = Column(String, nullable=True)
+    signed_by_client_at = Column(DateTime(timezone=True), nullable=True)
+    signed_by_driver_at = Column(DateTime(timezone=True), nullable=True)
+    signed_by_platform_at = Column(DateTime(timezone=True), nullable=True)
+    status = Column(String, default="draft")  # draft, sent, signed, archived
+    contract_metadata = Column(JSON, nullable=True)  # Подписанты, даты, номера
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    order = relationship("Order", backref="contract")
+    template = relationship("ContractTemplate")
+
+class CargoDocument(Base):
+    """Документы на груз"""
+    __tablename__ = "cargo_documents"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)
+    document_type = Column(String, nullable=False)  # ttn, invoice, packing_list, photo
+    file_path = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    order = relationship("Order", backref="cargo_documents")
+    uploader = relationship("User", foreign_keys=[uploaded_by])
+    
+class ContractTemplate(Base):
+    """Шаблон договора"""
+    __tablename__ = "contract_templates"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    template_type = Column(String, nullable=False)  # client_agreement, driver_agreement, transport
+    html_content = Column(Text, nullable=False)
+    variables = Column(JSON, nullable=True)  # {"client_name": "string", "order_id": "int"}
+    is_active = Column(Boolean, default=True)
+    version = Column(String, default="1.0")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class Review(Base):
+    """Отзывы и рейтинги"""
+    __tablename__ = "reviews"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)
+    reviewer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    reviewed_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    rating = Column(Float, nullable=False)  # 1-5
+    comment = Column(Text, nullable=True)
+    category_ratings = Column(JSON, nullable=True)  # {"punctuality": 5, "communication": 4, ...}
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    order = relationship("Order", backref="review")
+    reviewer = relationship("User", foreign_keys=[reviewer_id], backref="given_reviews")
+    reviewed = relationship("User", foreign_keys=[reviewed_id], backref="received_reviews")
+
+class SupportTicket(Base):
+    """Тикет поддержки"""
+    __tablename__ = "support_tickets"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
+    category = Column(String, nullable=False)  # technical, financial, dispute, other
+    priority = Column(String, default="medium")  # low, medium, high, critical
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=False)
+    status = Column(String, default="open")  # open, in_progress, resolved, closed
+    assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True)  # admin
+    resolution_notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id], backref="tickets")
+    order = relationship("Order", backref="tickets")
+    assignee = relationship("User", foreign_keys=[assigned_to])
+
+class AuditLog(Base):
+    """Журнал аудита действий"""
+    __tablename__ = "audit_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    action = Column(String, nullable=False)  # create, update, delete, login, etc.
+    entity_type = Column(String, nullable=False)  # user, order, bid, etc.
+    entity_id = Column(Integer, nullable=False)
+    old_values = Column(JSON, nullable=True)
+    new_values = Column(JSON, nullable=True)
+    ip_address = Column(String, nullable=True)
+    user_agent = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    user = relationship("User")
 
 class OrderStatus(str, enum.Enum):
     DRAFT = "draft"              # Черновик
@@ -55,6 +195,16 @@ class User(Base):
     balance = Column(Float, default=0.0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True)
+    default_payment_method = Column(String, nullable=True)
+    notification_settings = Column(JSON, default=lambda: {
+        "email": True,
+        "push": True,
+        "sms": False,
+        "new_order": True,
+        "order_updates": True,
+        "promotions": False
+    })
     
     # Relationships
     driver_profile = relationship("DriverProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
@@ -100,6 +250,9 @@ class Order(Base):
     client_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     driver_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     status = Column(Enum(OrderStatus), default=OrderStatus.DRAFT, nullable=False)
+    contract_id = Column(Integer, ForeignKey("contracts.id"), nullable=True)
+    is_urgent = Column(Boolean, default=False)
+    requirements = Column(JSON, nullable=True)  # {"loading_equipment": True, "temperature": "-18"}
     
     # Address information
     from_address = Column(String, nullable=False)

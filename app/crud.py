@@ -28,6 +28,316 @@ def create_user(db: Session, user: schemas.UserCreate) -> models.User:
     db.refresh(db_user)
     return db_user
 
+def create_company(db: Session, company: schemas.CompanyCreate, user_id: int) -> models.Company:
+    """Создание компании"""
+    db_company = models.Company(
+        user_id=user_id,
+        **company.model_dump()
+    )
+    db.add(db_company)
+    db.commit()
+    db.refresh(db_company)
+    
+    # Обновляем пользователя
+    user = get_user_by_id(db, user_id)
+    if user:
+        user.company_id = db_company.id
+        db.commit()
+    
+    return db_company
+
+def get_company(db: Session, company_id: int) -> Optional[models.Company]:
+    """Получение компании по ID"""
+    return db.query(models.Company).filter(models.Company.id == company_id).first()
+
+def get_company_by_user(db: Session, user_id: int) -> Optional[models.Company]:
+    """Получение компании по user_id"""
+    return db.query(models.Company).filter(models.Company.user_id == user_id).first()
+
+def get_companies(db: Session, skip: int = 0, limit: int = 100, 
+                  verification_status: Optional[str] = None) -> List[models.Company]:
+    """Получение списка компаний"""
+    query = db.query(models.Company)
+    
+    if verification_status:
+        query = query.filter(models.Company.verification_status == verification_status)
+    
+    return query.order_by(desc(models.Company.created_at)).offset(skip).limit(limit).all()
+
+def verify_company(db: Session, company_id: int, status: str, 
+                   notes: Optional[str] = None) -> Optional[models.Company]:
+    """Верификация компании"""
+    company = get_company(db, company_id)
+    if not company:
+        return None
+    
+    company.verification_status = status
+    db.commit()
+    db.refresh(company)
+    
+    # Создаем запись в журнале аудита
+    create_audit_log(db, {
+        "user_id": None,  # Система
+        "action": "verify_company",
+        "entity_type": "company",
+        "entity_id": company_id,
+        "new_values": {"verification_status": status, "notes": notes}
+    })
+    
+    return company
+
+# Contract CRUD
+def create_contract(db: Session, contract: schemas.ContractCreate) -> models.Contract:
+    """Создание договора"""
+    db_contract = models.Contract(**contract.model_dump())
+    db.add(db_contract)
+    db.commit()
+    db.refresh(db_contract)
+    return db_contract
+
+def get_contract(db: Session, contract_id: int) -> Optional[models.Contract]:
+    """Получение договора по ID"""
+    return db.query(models.Contract).filter(models.Contract.id == contract_id).first()
+
+def get_contract_by_order(db: Session, order_id: int) -> Optional[models.Contract]:
+    """Получение договора по order_id"""
+    return db.query(models.Contract).filter(models.Contract.order_id == order_id).first()
+
+def update_contract_status(db: Session, contract_id: int, status: str, 
+                          signature_data: Optional[Dict] = None) -> Optional[models.Contract]:
+    """Обновление статуса договора"""
+    contract = get_contract(db, contract_id)
+    if not contract:
+        return None
+    
+    contract.status = status
+    
+    if signature_data:
+        if signature_data.get("signed_by") == "client":
+            contract.signed_by_client_at = datetime.utcnow()
+        elif signature_data.get("signed_by") == "driver":
+            contract.signed_by_driver_at = datetime.utcnow()
+        elif signature_data.get("signed_by") == "platform":
+            contract.signed_by_platform_at = datetime.utcnow()
+        
+        if signature_data.get("metadata"):
+            contract.metadata = signature_data["metadata"]
+    
+    db.commit()
+    db.refresh(contract)
+    
+    # Аудит
+    create_audit_log(db, {
+        "user_id": signature_data.get("user_id") if signature_data else None,
+        "action": f"sign_contract_{signature_data.get('signed_by', 'unknown')}" if signature_data else "update_contract_status",
+        "entity_type": "contract",
+        "entity_id": contract_id,
+        "new_values": {"status": status, "signature_data": signature_data}
+    })
+    
+    return contract
+
+# ContractTemplate CRUD
+def create_contract_template(db: Session, template: schemas.ContractTemplateCreate) -> models.ContractTemplate:
+    """Создание шаблона договора"""
+    db_template = models.ContractTemplate(**template.model_dump())
+    db.add(db_template)
+    db.commit()
+    db.refresh(db_template)
+    return db_template
+
+def get_contract_template(db: Session, template_id: int) -> Optional[models.ContractTemplate]:
+    """Получение шаблона по ID"""
+    return db.query(models.ContractTemplate).filter(models.ContractTemplate.id == template_id).first()
+
+def get_contract_templates(db: Session, template_type: Optional[str] = None, 
+                          is_active: bool = True) -> List[models.ContractTemplate]:
+    """Получение списка шаблонов"""
+    query = db.query(models.ContractTemplate).filter(models.ContractTemplate.is_active == is_active)
+    
+    if template_type:
+        query = query.filter(models.ContractTemplate.template_type == template_type)
+    
+    return query.order_by(desc(models.ContractTemplate.created_at)).all()
+
+def generate_contract_pdf(db: Session, contract_id: int, template_variables: Dict) -> str:
+    """Генерация PDF договора"""
+    contract = get_contract(db, contract_id)
+    if not contract:
+        raise ValueError("Contract not found")
+    
+    # Временная заглушка - в продакшене интегрировать с библиотекой для генерации PDF
+    import uuid
+    pdf_path = f"contracts/{contract_id}_{uuid.uuid4().hex[:8]}.pdf"
+    
+    # Обновляем путь в договоре
+    contract.pdf_path = pdf_path
+    db.commit()
+    
+    return pdf_path
+
+# CargoDocument CRUD
+def create_cargo_document(db: Session, document: schemas.CargoDocumentCreate, 
+                         uploaded_by: int) -> models.CargoDocument:
+    """Создание документа на груз"""
+    db_document = models.CargoDocument(
+        uploaded_by=uploaded_by,
+        **document.model_dump()
+    )
+    db.add(db_document)
+    db.commit()
+    db.refresh(db_document)
+    return db_document
+
+def get_cargo_document(db: Session, document_id: int) -> Optional[models.CargoDocument]:
+    """Получение документа по ID"""
+    return db.query(models.CargoDocument).filter(models.CargoDocument.id == document_id).first()
+
+def get_cargo_documents_by_order(db: Session, order_id: int) -> List[models.CargoDocument]:
+    """Получение документов по заказу"""
+    return db.query(models.CargoDocument).filter(models.CargoDocument.order_id == order_id).all()
+
+# Review CRUD
+def create_review(db: Session, review: schemas.ReviewCreate, reviewer_id: int) -> models.Review:
+    """Создание отзыва"""
+    # Проверяем, что заказ завершен
+    order = get_order(db, review.order_id)
+    if not order or order.status != models.OrderStatus.COMPLETED:
+        raise ValueError("Можно оставлять отзывы только по завершенным заказам")
+    
+    # Проверяем, что отзыв пишет участник заказа
+    if reviewer_id not in [order.client_id, order.driver_id]:
+        raise ValueError("Только участники заказа могут оставлять отзывы")
+    
+    # Проверяем, что отзыв пишется другому участнику
+    if reviewer_id == review.reviewed_id:
+        raise ValueError("Нельзя оставить отзыв самому себе")
+    
+    # Проверяем, что отзыв еще не оставлен
+    existing_review = db.query(models.Review).filter(
+        models.Review.order_id == review.order_id,
+        models.Review.reviewer_id == reviewer_id
+    ).first()
+    
+    if existing_review:
+        raise ValueError("Вы уже оставили отзыв по этому заказу")
+    
+    db_review = models.Review(
+        reviewer_id=reviewer_id,
+        **review.model_dump()
+    )
+    db.add(db_review)
+    db.commit()
+    db.refresh(db_review)
+    
+    # Обновляем рейтинг пользователя
+    update_user_rating(db, review.reviewed_id)
+    
+    return db_review
+
+def get_reviews_by_user(db: Session, user_id: int) -> List[models.Review]:
+    """Получение отзывов о пользователе"""
+    return db.query(models.Review).filter(models.Review.reviewed_id == user_id).all()
+
+def update_user_rating(db: Session, user_id: int) -> None:
+    """Обновление рейтинга пользователя"""
+    reviews = get_reviews_by_user(db, user_id)
+    if not reviews:
+        return
+    
+    avg_rating = sum([r.rating for r in reviews]) / len(reviews)
+    
+    user = get_user_by_id(db, user_id)
+    if user:
+        # Предполагаем, что в User есть поле rating
+        # Если нет, нужно добавить
+        user.rating = avg_rating
+        db.commit()
+
+# SupportTicket CRUD
+def create_support_ticket(db: Session, ticket: schemas.SupportTicketCreate, 
+                         user_id: int) -> models.SupportTicket:
+    """Создание тикета поддержки"""
+    db_ticket = models.SupportTicket(
+        user_id=user_id,
+        **ticket.model_dump()
+    )
+    db.add(db_ticket)
+    db.commit()
+    db.refresh(db_ticket)
+    return db_ticket
+
+def get_support_ticket(db: Session, ticket_id: int) -> Optional[models.SupportTicket]:
+    """Получение тикета по ID"""
+    return db.query(models.SupportTicket).filter(models.SupportTicket.id == ticket_id).first()
+
+def get_support_tickets(db: Session, skip: int = 0, limit: int = 100,
+                       status: Optional[str] = None, 
+                       priority: Optional[str] = None,
+                       assigned_to: Optional[int] = None) -> List[models.SupportTicket]:
+    """Получение списка тикетов"""
+    query = db.query(models.SupportTicket)
+    
+    if status:
+        query = query.filter(models.SupportTicket.status == status)
+    if priority:
+        query = query.filter(models.SupportTicket.priority == priority)
+    if assigned_to:
+        query = query.filter(models.SupportTicket.assigned_to == assigned_to)
+    
+    return query.order_by(desc(models.SupportTicket.created_at)).offset(skip).limit(limit).all()
+
+def update_ticket_status(db: Session, ticket_id: int, status: str,
+                        resolution_notes: Optional[str] = None,
+                        assigned_to: Optional[int] = None) -> Optional[models.SupportTicket]:
+    """Обновление статуса тикета"""
+    ticket = get_support_ticket(db, ticket_id)
+    if not ticket:
+        return None
+    
+    ticket.status = status
+    
+    if status == "resolved":
+        ticket.resolved_at = datetime.utcnow()
+    
+    if resolution_notes:
+        ticket.resolution_notes = resolution_notes
+    
+    if assigned_to:
+        ticket.assigned_to = assigned_to
+    
+    db.commit()
+    db.refresh(ticket)
+    return ticket
+
+# AuditLog CRUD
+def create_audit_log(db: Session, audit_data: Dict) -> models.AuditLog:
+    """Создание записи в журнале аудита"""
+    db_log = models.AuditLog(**audit_data)
+    db.add(db_log)
+    db.commit()
+    db.refresh(db_log)
+    return db_log
+
+def get_audit_logs(db: Session, skip: int = 0, limit: int = 100,
+                  user_id: Optional[int] = None,
+                  entity_type: Optional[str] = None,
+                  start_date: Optional[datetime] = None,
+                  end_date: Optional[datetime] = None) -> List[models.AuditLog]:
+    """Получение журнала аудита"""
+    query = db.query(models.AuditLog)
+    
+    if user_id:
+        query = query.filter(models.AuditLog.user_id == user_id)
+    if entity_type:
+        query = query.filter(models.AuditLog.entity_type == entity_type)
+    if start_date:
+        query = query.filter(models.AuditLog.created_at >= start_date)
+    if end_date:
+        query = query.filter(models.AuditLog.created_at <= end_date)
+    
+    return query.order_by(desc(models.AuditLog.created_at)).offset(skip).limit(limit).all()
+
 def get_user_by_email(db: Session, email: str) -> Optional[models.User]:
     """Получение пользователя по email"""
     return db.query(models.User).filter(models.User.email == email).first()

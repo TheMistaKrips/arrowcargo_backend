@@ -1,8 +1,9 @@
 """
 Pydantic схемы для валидации данных
 """
+import enum
 from pydantic import BaseModel, EmailStr, ConfigDict, Field, field_validator
-from typing import Optional, List
+from typing import Dict, Optional, List
 from datetime import datetime
 from enum import Enum
 from decimal import Decimal
@@ -17,6 +18,60 @@ class VerificationStatus(str, Enum):
     PENDING = "pending"
     VERIFIED = "verified"
     REJECTED = "rejected"
+
+class SupportTicketStatus(str, enum.Enum):
+    OPEN = "open"
+    IN_PROGRESS = "in_progress"
+    RESOLVED = "resolved"
+    CLOSED = "closed"
+
+class SupportTicketPriority(str, enum.Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+class SupportTicketCategory(str, enum.Enum):
+    TECHNICAL = "technical"
+    FINANCIAL = "financial"
+    DISPUTE = "dispute"
+    OTHER = "other"
+
+class DocumentType(str, enum.Enum):
+    TTN = "ttn"
+    INVOICE = "invoice"
+    PACKING_LIST = "packing_list"
+    PHOTO = "photo"
+    OTHER = "other"
+
+# Company schemas
+class CompanyBase(BaseModel):
+    name: str
+    inn: str
+    kpp: Optional[str] = None
+    ogrn: str
+    legal_address: str
+    actual_address: Optional[str] = None
+    bank_name: str
+    bank_account: str
+    corr_account: Optional[str] = None
+    bic: str
+    director_name: str
+    director_position: str
+
+class CompanyCreate(CompanyBase):
+    documents: Optional[Dict[str, str]] = None
+
+class CompanyResponse(CompanyBase):
+    id: int
+    user_id: int
+    verification_status: VerificationStatus
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
 
 class OrderStatus(str, Enum):
     DRAFT = "draft"
@@ -41,6 +96,123 @@ class PaymentStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     REFUNDED = "refunded"
+
+class ContractBase(BaseModel):
+    order_id: int
+    template_id: Optional[int] = None
+
+class ContractCreate(ContractBase):
+    pass
+
+class ContractResponse(ContractBase):
+    id: int
+    pdf_path: Optional[str] = None
+    signed_by_client_at: Optional[datetime] = None
+    signed_by_driver_at: Optional[datetime] = None
+    signed_by_platform_at: Optional[datetime] = None
+    status: str
+    metadata: Optional[Dict] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
+# Contract Template schemas
+class ContractTemplateBase(BaseModel):
+    name: str
+    template_type: str
+    html_content: str
+    variables: Optional[Dict] = None
+
+class ContractTemplateCreate(ContractTemplateBase):
+    pass
+
+class ContractTemplateResponse(ContractTemplateBase):
+    id: int
+    is_active: bool
+    version: str
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class CargoDocumentBase(BaseModel):
+    order_id: int
+    document_type: DocumentType
+    description: Optional[str] = None
+
+class CargoDocumentCreate(CargoDocumentBase):
+    pass
+
+class CargoDocumentResponse(CargoDocumentBase):
+    id: int
+    file_path: str
+    uploaded_by: int
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+# Review schemas
+class ReviewBase(BaseModel):
+    order_id: int
+    reviewed_id: int
+    rating: float = Field(ge=1.0, le=5.0)
+    comment: Optional[str] = None
+    category_ratings: Optional[Dict[str, float]] = None
+
+class ReviewCreate(ReviewBase):
+    pass
+
+class ReviewResponse(ReviewBase):
+    id: int
+    reviewer_id: int
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+# Support Ticket schemas
+class SupportTicketBase(BaseModel):
+    order_id: Optional[int] = None
+    category: SupportTicketCategory
+    priority: SupportTicketPriority = SupportTicketPriority.MEDIUM
+    title: str
+    description: str
+
+class SupportTicketCreate(SupportTicketBase):
+    pass
+
+class SupportTicketResponse(SupportTicketBase):
+    id: int
+    user_id: int
+    status: SupportTicketStatus
+    assigned_to: Optional[int] = None
+    resolution_notes: Optional[str] = None
+    created_at: datetime
+    resolved_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
+# Audit Log schemas
+class AuditLogResponse(BaseModel):
+    id: int
+    user_id: Optional[int] = None
+    action: str
+    entity_type: str
+    entity_id: int
+    old_values: Optional[Dict] = None
+    new_values: Optional[Dict] = None
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
 
 # User schemas
 class UserBase(BaseModel):
@@ -82,6 +254,16 @@ class UserResponse(UserBase):
     balance: float
     created_at: datetime
     updated_at: Optional[datetime] = None
+    company_id: Optional[int] = None
+    default_payment_method: Optional[str] = None
+    notification_settings: Dict = Field(default_factory=lambda: {
+        "email": True,
+        "push": True,
+        "sms": False,
+        "new_order": True,
+        "order_updates": True,
+        "promotions": False
+    })
     model_config = ConfigDict(from_attributes=True)
 
 class Token(BaseModel):
@@ -173,6 +355,9 @@ class OrderResponse(OrderBase):
     order_amount: Optional[float] = None
     payment_status: PaymentStatus
     delivery_date: Optional[datetime] = None
+    contract_id: Optional[int] = None
+    is_urgent: bool = False
+    requirements: Optional[Dict] = None
     completed_at: Optional[datetime] = None
     created_at: datetime
     updated_at: Optional[datetime] = None

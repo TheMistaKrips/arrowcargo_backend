@@ -23,7 +23,7 @@ from .routes import (
     admin_router,
     health_router,
     integration_router,
-    admin_dashboard_router
+    admin_dashboard_router, contracts, documents, support, reviews, companies
 )
 
 # Настройка логирования
@@ -104,6 +104,11 @@ app.include_router(admin_router)
 app.include_router(health_router)
 app.include_router(integration_router)
 app.include_router(admin_dashboard_router)
+app.include_router(contracts.router)
+app.include_router(documents.router)
+app.include_router(support.router)
+app.include_router(reviews.router)
+app.include_router(companies.router)
 
 # Основные эндпоинты
 @app.get("/")
